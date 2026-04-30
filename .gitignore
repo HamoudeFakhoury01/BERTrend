@@ -132,3 +132,7 @@ postman
 **/gmail_token.json
 
 
+
+# Local BERTrend data and HF cache (created at runtime, host-specific, not source code)
+.bertrend/
+.cache/

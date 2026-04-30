@@ -1,0 +1,33 @@
+# Secrets and local config — NEVER bake into images
+.env
+.env.local
+*.pem
+!bertrend/services/key.pem
+!bertrend/services/cert.pem
+
+# Local cache and runtime data — huge and host-specific
+.bertrend/
+.cache/
+.venv/
+__pycache__/
+*.pyc
+
+# Editor and OS junk
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Git metadata — not needed at runtime
+.git/
+.gitignore
+.github/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+logs/

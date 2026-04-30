@@ -38,8 +38,20 @@ RUN mkdir -p /app/nltk_data && \
 
 COPY supervisord.conf run_demos.sh /app/
 
-# Install BERTrend
-RUN uv pip install --no-cache-dir --system -U bertrend && \
+# Copy local bertrend source (with all our patches) instead of installing from PyPI.
+# This bakes the patches into the image so they survive `docker compose down/up`
+# and any deployment to a remote host (RunPod, OVH, etc.) without manual `docker cp`.
+COPY pyproject.toml uv.lock README.md /app/source/
+COPY bertrend /app/source/bertrend
+
+# Install BERTrend from local source.
+# UV_HTTP_TIMEOUT=600 — give each PyPI download up to 10 min before failing (some
+#   packages like tifffile, dill are slow on flaky connections).
+# UV_CONCURRENT_DOWNLOADS=4 — fewer parallel downloads = less likely to saturate
+#   the network and trigger timeouts on individual requests.
+RUN cd /app/source && \
+    UV_HTTP_TIMEOUT=600 UV_CONCURRENT_DOWNLOADS=4 \
+    uv pip install --no-cache-dir --system . && \
     chmod -R a+w /usr/local/lib/python3.13/site-packages/ # Workaround for packages (such as numba which use caching in __pycache__ (requires writing rights)
 
 # Expose Streamlit ports for all three demos

@@ -16,6 +16,11 @@ services:
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
       - CUDA_VISIBLE_DEVICES=0
+      - USER=bertrend
+      # Shared SECRET_KEY across all uvicorn workers — without this, each worker
+      # generates its own random key at startup and tokens signed by worker A are
+      # rejected by worker B (random 401s on /encode).
+      - BERTREND_SECRET_KEY=${BERTREND_SECRET_KEY:-997c97c66d93821153c1a5c5fb7bab50a45cc87a6c7335b4d9225b0190ed4bd8}
       # Ensure these are not empty strings
       - DEFAULT_RATE_LIMIT=${DEFAULT_RATE_LIMIT:-50}
       - DEFAULT_RATE_WINDOW=${DEFAULT_RATE_WINDOW:-60}
@@ -35,13 +40,14 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1  # Use 1 GPU for the embedding server
-              capabilities: [gpu]
+    # GPU disabled for CPU-only host (CityMood dev machine)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
 
   # Main BERTrend application
   bertrend:
@@ -66,6 +72,9 @@ services:
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
       - CUDA_VISIBLE_DEVICES=0
+      - USER=bertrend
+      - TORCHDYNAMO_DISABLE=1
+      - TORCH_COMPILE_DISABLE=1
       # Set HF_HOME inside container
       - HF_HOME=/app/.cache/huggingface
       # Set UV_CACHE_DIR to a location where the user has write permissions
@@ -94,10 +103,11 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    deploy:
-       resources:
-         reservations:
-           devices:
-             - driver: nvidia
-               count: 1  # Use 1 GPU for the bertrend server
-               capabilities: [gpu]
+    # GPU disabled for CPU-only host (CityMood dev machine)
+    # deploy:
+    #    resources:
+    #      reservations:
+    #        devices:
+    #          - driver: nvidia
+    #            count: 1
+    #            capabilities: [gpu]

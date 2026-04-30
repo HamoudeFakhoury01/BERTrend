@@ -1,0 +1,25 @@
+#  Override file to enable NVIDIA GPU on the embedding_server and bertrend services.
+#
+#  Local dev (CPU): `docker compose up`
+#  GPU host (RunPod, OVH GPU, etc.): `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up`
+#
+#  Requires the host to have nvidia-container-toolkit installed and a CUDA-capable GPU.
+
+services:
+  embedding_server:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  bertrend:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

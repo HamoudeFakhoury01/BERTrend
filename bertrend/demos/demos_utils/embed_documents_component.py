@@ -35,9 +35,14 @@ def display_embed_documents_component():
                     "embedding_model_name", embedding_service.embedding_model_name
                 )
 
-            texts = SessionStateManager.get_dataframe("time_filtered_df")[
-                TEXT_COLUMN
-            ].tolist()
+            df = SessionStateManager.get_dataframe("time_filtered_df")
+            mask = df[TEXT_COLUMN].notna() & df[TEXT_COLUMN].astype(str).str.strip().ne("")
+            n_dropped = int((~mask).sum())
+            if n_dropped > 0:
+                df = df[mask].reset_index(drop=True)
+                SessionStateManager.set("time_filtered_df", df)
+                st.warning(f"Skipped {n_dropped} rows with empty or NaN text before embedding")
+            texts = df[TEXT_COLUMN].tolist()
 
             embeddings, token_strings, token_embeddings = embedding_service.embed(
                 texts=texts,
