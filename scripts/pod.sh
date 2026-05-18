@@ -26,6 +26,19 @@ export EMBEDDING_SERVICE_URL=https://localhost:6464
 export EMBEDDING_SERVICE_USE_LOCAL=false
 mkdir -p "$BERTREND_BASE_DIR/logs"
 
+# Secrets that must NOT live in the repo (OpenAI key for the LLM report).
+# Create /workspace/.env on the pod once:
+#   echo 'OPENAI_API_KEY=sk-...'        >  /workspace/.env
+#   echo 'OPENAI_DEFAULT_MODEL=gpt-4o-mini' >> /workspace/.env
+if [ -f "$WORKSPACE/.env" ]; then
+    set -a
+    . "$WORKSPACE/.env"
+    set +a
+    echo ">>> loaded $WORKSPACE/.env (OpenAI key for LLM analysis)"
+else
+    echo ">>> WARNING: no $WORKSPACE/.env -> LLM analysis will fail (no OpenAI key)"
+fi
+
 # --- uv (tiny binary, lives in ~/.local -> fast to (re)install) -------------
 if ! command -v uv >/dev/null 2>&1; then
     curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1
