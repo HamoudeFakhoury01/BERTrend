@@ -28,8 +28,14 @@ from bertrend.demos.demos_utils.state_utils import restore_widget_state
 LAYOUT = "wide"
 
 
-# Set locale for French date names
-locale.setlocale(locale.LC_TIME, "fr_FR.UTF-8")
+# Set locale for French date names (best effort: don't crash if the
+# fr_FR.UTF-8 locale isn't generated on the host, e.g. minimal containers).
+for _loc in ("fr_FR.UTF-8", "fr_FR.utf8", "fr_FR", "C.UTF-8", ""):
+    try:
+        locale.setlocale(locale.LC_TIME, _loc)
+        break
+    except locale.Error:
+        continue
 
 
 def define_pages():
