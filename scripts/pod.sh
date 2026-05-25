@@ -72,17 +72,26 @@ cd "$REPO/bertrend/services/embedding_server"
 nohup "$PY" start.py > /tmp/emb.log 2>&1 &
 echo ">>> embedding_server starting (PID $!)"
 
-cd "$REPO/bertrend/demos/weak_signals"
+# Which demo to serve on port 8084. Default: topic_analysis (static topics,
+# temporal viz, LLM newsletter) — best for "what is discussed over the period".
+# Use `bash scripts/pod.sh weak` for the weak-signals demo instead.
+DEMO="${1:-topic_analysis}"
+case "$DEMO" in
+    weak|weak_signals) DEMO_DIR="$REPO/bertrend/demos/weak_signals" ;;
+    *)                 DEMO_DIR="$REPO/bertrend/demos/topic_analysis" ;;
+esac
+
+cd "$DEMO_DIR"
 nohup "$PY" -m streamlit run app.py \
     --server.address=0.0.0.0 \
     --server.port=8084 \
     --server.enableCORS=false \
     --server.enableXsrfProtection=false \
     > /tmp/st.log 2>&1 &
-echo ">>> streamlit starting (PID $!)"
+echo ">>> streamlit ($DEMO) starting (PID $!)"
 
 echo
-echo "=== LANCÉ ==="
+echo "=== LANCÉ ($DEMO) ==="
 echo "Attends ~2 min le chargement du modèle :  tail -f /tmp/emb.log"
 echo "Prêt quand tu vois 'Application startup complete' (2x)."
 echo "Puis : page du Pod -> HTTP Service port 8084 -> upload ton .xlsx"
