@@ -26,6 +26,12 @@ export EMBEDDING_SERVICE_URL=https://localhost:6464
 export EMBEDDING_SERVICE_USE_LOCAL=false
 mkdir -p "$BERTREND_BASE_DIR/logs"
 
+# Keep uv's cache + temp on the volume (/workspace), not the small container disk.
+# Avoids "No space left on device" while extracting the huge torch wheel.
+export UV_CACHE_DIR="$WORKSPACE/.uvcache"
+export TMPDIR="$WORKSPACE/.tmp"
+mkdir -p "$UV_CACHE_DIR" "$TMPDIR"
+
 # Secrets that must NOT live in the repo (OpenAI key for the LLM report).
 # Create /workspace/.env on the pod once:
 #   echo 'OPENAI_API_KEY=sk-...'        >  /workspace/.env
