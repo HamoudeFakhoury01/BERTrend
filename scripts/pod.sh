@@ -63,13 +63,17 @@ fi
 if [ ! -x "$PY" ]; then
     echo ">>> First run: building venv (Python 3.12 + bertrend + torch cu128)..."
     uv venv --python 3.12 --clear "$VENV"
-    uv pip install --python "$PY" "$REPO"
+    uv pip install --python "$PY" -e "$REPO"
     uv pip install --python "$PY" --force-reinstall torch torchvision \
         --index-url https://download.pytorch.org/whl/cu128
     echo ">>> Install done."
 else
     echo ">>> venv found, skipping install."
 fi
+
+# Always refresh the editable link to bertrend so a `git pull` of code changes
+# takes effect without a full reinstall (cheap: no dependency resolution).
+uv pip install --python "$PY" -e "$REPO" --no-deps >/dev/null 2>&1 || true
 
 # --- (Re)launch the two servers --------------------------------------------
 pkill -f start.py    2>/dev/null || true
