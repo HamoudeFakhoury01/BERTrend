@@ -20,7 +20,11 @@ def _resolve_env_variables(config_dict: dict) -> dict:
     for key, value in config_dict.items():
         # If the value is a string, check for environment variable
         if isinstance(value, str):
-            config_dict[key] = os.path.expandvars(value)
+            resolved = os.path.expandvars(value)
+            # os.path.expandvars leaves an unset var as a literal "$VAR". Blank
+            # those out so downstream gets "" (treated as unset) instead of a
+            # garbage value like "$OPENAI_BASE_URL" (which broke the OpenAI client).
+            config_dict[key] = "" if resolved.startswith("$") else resolved
         # If it's a nested dictionary, recurse
         elif isinstance(value, dict):
             config_dict[key] = _resolve_env_variables(value)

@@ -83,8 +83,11 @@ class OpenAI_Client:
         self.base_url = (base_url or os.getenv("OPENAI_BASE_URL")) or None
 
         openai_params = {
-            "base_url": base_url,
-            "api_key": api_key,
+            # Use the normalized values: self.base_url is None when unset/empty
+            # (so the SDK falls back to the default OpenAI endpoint) instead of
+            # being passed a bad value like "" or a literal "$OPENAI_BASE_URL".
+            "base_url": self.base_url,
+            "api_key": self.api_key,
             "timeout": Timeout(TIMEOUT, connect=10.0),
             "max_retries": MAX_ATTEMPTS,
         }
