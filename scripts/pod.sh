@@ -48,7 +48,7 @@ fi
 # --- One-time heavy install (skipped if the venv already exists) ------------
 if [ ! -x "$PY" ]; then
     echo ">>> First run: building venv (Python 3.12 + bertrend + torch cu128)..."
-    uv venv --python 3.12 "$VENV"
+    uv venv --python 3.12 --clear "$VENV"
     uv pip install --python "$PY" "$REPO"
     uv pip install --python "$PY" --force-reinstall torch torchvision \
         --index-url https://download.pytorch.org/whl/cu128
