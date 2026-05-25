@@ -45,6 +45,14 @@ else
     echo ">>> WARNING: no $WORKSPACE/.env -> LLM analysis will fail (no OpenAI key)"
 fi
 
+# --- French locale (topic_analysis demo calls setlocale fr_FR.UTF-8) --------
+if ! locale -a 2>/dev/null | grep -qi "fr_FR.utf8"; then
+    echo ">>> generating fr_FR.UTF-8 locale..."
+    apt-get update -qq >/dev/null 2>&1
+    apt-get install -y -qq locales >/dev/null 2>&1
+    locale-gen fr_FR.UTF-8 >/dev/null 2>&1
+fi
+
 # --- uv (tiny binary, lives in ~/.local -> fast to (re)install) -------------
 if ! command -v uv >/dev/null 2>&1; then
     curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1
