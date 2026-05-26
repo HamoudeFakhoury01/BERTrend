@@ -86,11 +86,20 @@ echo ">>> embedding_server starting (PID $!)"
 
 # Which demo to serve on port 8084. Default: topic_analysis (static topics,
 # temporal viz, LLM newsletter) — best for "what is discussed over the period".
-# Use `bash scripts/pod.sh weak` for the weak-signals demo instead.
+#   bash scripts/pod.sh             -> topic_analysis (default)
+#   bash scripts/pod.sh weak        -> weak_signals
+#   bash scripts/pod.sh prospective -> prospective_demo (login: admin / bertrend)
 DEMO="${1:-topic_analysis}"
 case "$DEMO" in
-    weak|weak_signals) DEMO_DIR="$REPO/bertrend/demos/weak_signals" ;;
-    *)                 DEMO_DIR="$REPO/bertrend/demos/topic_analysis" ;;
+    weak|weak_signals)        DEMO_DIR="$REPO/bertrend/demos/weak_signals" ;;
+    prospective|prospective_demo)
+        DEMO_DIR="$REPO/bertrend/bertrend_apps/prospective_demo"
+        # prospective_demo is auth-gated via st.secrets -> seed a default login.
+        mkdir -p "$HOME/.streamlit"
+        printf '[passwords]\nadmin = "bertrend"\n' > "$HOME/.streamlit/secrets.toml"
+        echo ">>> prospective_demo login -> user: admin / password: bertrend"
+        ;;
+    *)                        DEMO_DIR="$REPO/bertrend/demos/topic_analysis" ;;
 esac
 
 cd "$DEMO_DIR"
