@@ -71,6 +71,16 @@ else
     echo ">>> venv found, skipping install."
 fi
 
+# Torch is often left half-installed when the flaky web terminal drops mid-download:
+# $PY exists (so the block above is skipped) but `import torch` is broken. Verify it
+# really works and repair ONLY torch if not — a cheap no-op when torch is already fine.
+if ! "$PY" -c "import torch; torch.LongTensor" >/dev/null 2>&1; then
+    echo ">>> torch missing/broken -> (re)installing torch cu128..."
+    uv pip install --python "$PY" --force-reinstall torch torchvision \
+        --index-url https://download.pytorch.org/whl/cu128
+    echo ">>> torch repair done."
+fi
+
 # Always refresh the editable link to bertrend so a `git pull` of code changes
 # takes effect without a full reinstall (cheap: no dependency resolution).
 uv pip install --python "$PY" -e "$REPO" --no-deps >/dev/null 2>&1 || true
