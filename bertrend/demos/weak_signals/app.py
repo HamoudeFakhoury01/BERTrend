@@ -245,6 +245,55 @@ def training_page():
                     translate("model_training_complete_message"), icon=SUCCESS_ICON
                 )
 
+                # Controle qualite du clustering : DBCV par cluster (derniere fenetre).
+                # Note haute = cluster homogene ; note basse/negative = fourre-tout.
+                # Best-effort : ne doit jamais casser l'entrainement.
+                try:
+                    from hdbscan.validity import validity_index
+
+                    tm = bertrend.last_topic_model
+                    period = bertrend.last_topic_model_timestamp
+                    raw = bertrend.emb_groups[period]
+
+                    reduced = tm.umap_model.transform(raw).astype(np.float64)
+                    labels = tm.hdbscan_model.labels_
+                    clusters = np.unique(labels[labels != -1])
+
+                    if len(clusters) < 2:
+                        st.warning(
+                            f"DBCV : {len(clusters)} cluster(s) sur la derniere "
+                            f"fenetre — pas assez pour calculer un score.",
+                            icon=WARNING_ICON,
+                        )
+                    else:
+                        global_score, scores = validity_index(
+                            reduced, labels, per_cluster_scores=True
+                        )
+                        dbcv_df = pd.DataFrame(
+                            {
+                                "Cluster": clusters,
+                                "DBCV": np.round(scores, 3),
+                                "Taille": [
+                                    int((labels == c).sum()) for c in clusters
+                                ],
+                            }
+                        ).sort_values("DBCV", ascending=False)
+
+                        st.subheader(
+                            f"Qualite du clustering — DBCV global : {global_score:+.3f}"
+                        )
+                        st.caption(
+                            "Note haute = cluster homogene (contenus proches). "
+                            "Note basse ou negative = cluster fourre-tout, a ne pas "
+                            "utiliser pour un finding. Mesure la proprete du cluster, "
+                            "pas son interet."
+                        )
+                        st.dataframe(dbcv_df, width="stretch", hide_index=True)
+                        logger.info(f"[DBCV] global={global_score:.3f} par_cluster={dict(zip(clusters.tolist(), np.round(scores, 3).tolist()))}")
+                except Exception as e:
+                    logger.error(f"[DBCV] echec du calcul (non bloquant) : {e}")
+                    st.warning(f"DBCV non calcule : {e}", icon=WARNING_ICON)
+
                 # Save trained models
                 bertrend.save_model()
                 st.success(translate("models_saved_message"), icon=SUCCESS_ICON)
