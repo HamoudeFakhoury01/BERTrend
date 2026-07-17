@@ -28,6 +28,10 @@ metric = "euclidean"
 cluster_selection_method = "eom"
 prediction_data = true
 cluster_selection_persistence = 0.0
+# Requis pour exposer clusterer.relative_validity_ (DBCV approx). Sert UNIQUEMENT a
+# comparer des configs entre elles sur le meme jeu de donnees, jamais comme score
+# absolu. Sans ce flag, l'attribut n'existe pas sur l'objet HDBSCAN.
+gen_min_span_tree = true
 
 # CountVectorizer: https://scikit-learn.org/1.5/modules/generated/sklearn.feature_extraction.text.CountVectorizer.html
 [vectorizer_model]

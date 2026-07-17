@@ -245,54 +245,97 @@ def training_page():
                     translate("model_training_complete_message"), icon=SUCCESS_ICON
                 )
 
-                # Controle qualite du clustering : DBCV par cluster (derniere fenetre).
-                # Note haute = cluster homogene ; note basse/negative = fourre-tout.
-                # Best-effort : ne doit jamais casser l'entrainement.
+                # Controle qualite du clustering sur la derniere fenetre.
+                # Best-effort : ne doit JAMAIS casser l'entrainement.
                 try:
+                    from collections import Counter
+
                     from hdbscan.validity import validity_index
 
                     tm = bertrend.last_topic_model
                     period = bertrend.last_topic_model_timestamp
                     raw = bertrend.emb_groups[period]
 
-                    reduced = tm.umap_model.transform(raw).astype(np.float64)
-                    labels = tm.hdbscan_model.labels_
+                    hdb = tm.hdbscan_model
+                    labels = hdb.labels_
                     clusters = np.unique(labels[labels != -1])
+                    pct_bruit = float((labels == -1).mean() * 100)
 
-                    if len(clusters) < 2:
+                    st.subheader("Qualite du clustering")
+
+                    # DBCV exact : necessite >= 2 clusters (sinon pas de separation
+                    # calculable). Isole dans son propre try : s'il echoue, le reste
+                    # des metriques doit quand meme s'afficher.
+                    dbcv_global, dbcv_scores = None, None
+                    if len(clusters) >= 2:
+                        try:
+                            reduced = tm.umap_model.transform(raw).astype(np.float64)
+                            dbcv_global, dbcv_scores = validity_index(
+                                reduced, labels, per_cluster_scores=True
+                            )
+                        except Exception as e:
+                            logger.error(f"[QUALITE] validity_index a echoue : {e}")
+
+                    # Present uniquement si gen_min_span_tree=True dans la config.
+                    rel_val = getattr(hdb, "relative_validity_", None)
+
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("Clusters", len(clusters))
+                    c2.metric("Bruit", f"{pct_bruit:.0f} %")
+                    c3.metric(
+                        "DBCV global",
+                        f"{dbcv_global:+.3f}" if dbcv_global is not None else "n/a",
+                    )
+                    c4.metric(
+                        "relative_validity_",
+                        f"{rel_val:.3f}" if rel_val is not None else "n/a",
+                    )
+
+                    st.caption(
+                        "**DBCV global** = score exact, citable en rapport. "
+                        "**relative_validity_** = approximation : valable UNIQUEMENT pour "
+                        "comparer plusieurs configs entre elles sur le meme jeu de donnees, "
+                        "jamais comme score absolu (ecart mesure ~7x avec le DBCV exact). "
+                        "Ces scores mesurent la **proprete** des clusters, pas leur **interet**."
+                    )
+
+                    if len(clusters) == 0:
                         st.warning(
-                            f"DBCV : {len(clusters)} cluster(s) sur la derniere "
-                            f"fenetre — pas assez pour calculer un score.",
-                            icon=WARNING_ICON,
+                            "Aucun cluster : tout est classe en bruit.", icon=WARNING_ICON
                         )
                     else:
-                        global_score, scores = validity_index(
-                            reduced, labels, per_cluster_scores=True
-                        )
-                        dbcv_df = pd.DataFrame(
-                            {
-                                "Cluster": clusters,
-                                "DBCV": np.round(scores, 3),
-                                "Taille": [
-                                    int((labels == c).sum()) for c in clusters
-                                ],
-                            }
-                        ).sort_values("DBCV", ascending=False)
+                        tailles = Counter(labels.tolist())
+                        persistence = getattr(hdb, "cluster_persistence_", None)
+                        probas = getattr(hdb, "probabilities_", None)
 
-                        st.subheader(
-                            f"Qualite du clustering — DBCV global : {global_score:+.3f}"
+                        cols = {
+                            "Cluster": clusters,
+                            "Taille": [tailles[int(c)] for c in clusters],
+                        }
+                        if dbcv_scores is not None:
+                            cols["DBCV"] = np.round(dbcv_scores, 3)
+                        # cluster_persistence_ est aligne sur les labels 0..n-1 :
+                        # on ne l'utilise que si la longueur correspond.
+                        if persistence is not None and len(persistence) == len(clusters):
+                            cols["Persistence"] = np.round(persistence, 3)
+                        if probas is not None:
+                            cols["Proba moyenne"] = [
+                                round(float(probas[labels == c].mean()), 3)
+                                for c in clusters
+                            ]
+
+                        df_q = pd.DataFrame(cols)
+                        if "DBCV" in df_q.columns:
+                            df_q = df_q.sort_values("DBCV", ascending=False)
+                        st.dataframe(df_q, width="stretch", hide_index=True)
+
+                        logger.info(
+                            f"[QUALITE] clusters={len(clusters)} bruit={pct_bruit:.0f}% "
+                            f"dbcv_global={dbcv_global} relative_validity={rel_val}"
                         )
-                        st.caption(
-                            "Note haute = cluster homogene (contenus proches). "
-                            "Note basse ou negative = cluster fourre-tout, a ne pas "
-                            "utiliser pour un finding. Mesure la proprete du cluster, "
-                            "pas son interet."
-                        )
-                        st.dataframe(dbcv_df, width="stretch", hide_index=True)
-                        logger.info(f"[DBCV] global={global_score:.3f} par_cluster={dict(zip(clusters.tolist(), np.round(scores, 3).tolist()))}")
                 except Exception as e:
-                    logger.error(f"[DBCV] echec du calcul (non bloquant) : {e}")
-                    st.warning(f"DBCV non calcule : {e}", icon=WARNING_ICON)
+                    logger.error(f"[QUALITE] echec du calcul (non bloquant) : {e}")
+                    st.warning(f"Metriques qualite non calculees : {e}", icon=WARNING_ICON)
 
                 # Save trained models
                 bertrend.save_model()
