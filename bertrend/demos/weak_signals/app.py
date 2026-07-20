@@ -254,49 +254,80 @@ def training_page():
 
                     tm = bertrend.last_topic_model
                     period = bertrend.last_topic_model_timestamp
-                    raw = bertrend.emb_groups[period]
 
                     hdb = tm.hdbscan_model
+                    # Partition BRUTE de HDBSCAN (le noyau dense de chaque topic).
                     labels = hdb.labels_
                     clusters = np.unique(labels[labels != -1])
                     pct_bruit = float((labels == -1).mean() * 100)
 
+                    # Partition LIVREE : apres reduce_outliers(), une partie du bruit
+                    # est reaffectee aux topics (BERTopicModel.py:283). C'est CETTE
+                    # partition que l'utilisateur lit dans l'onglet Analyse, donc on
+                    # la note aussi. Les identifiants de topic sont conserves.
+                    topics = np.asarray(getattr(tm, "topics_", []))
+                    if topics.shape != labels.shape:
+                        topics = None  # desaligne -> on n'affiche pas la partie livree
+
+                    # L'espace exact ou HDBSCAN a clusterise = la sortie de
+                    # fit_transform, exposee par UMAP en .embedding_. Ne PAS refaire
+                    # un transform() : on noterait la qualite dans un autre espace.
+                    reduced = getattr(tm.umap_model, "embedding_", None)
+                    if reduced is None:
+                        reduced = tm.umap_model.transform(
+                            bertrend.emb_groups[period]
+                        )
+                    reduced = np.asarray(reduced).astype(np.float64)
+
                     st.subheader("Qualite du clustering")
 
-                    # DBCV exact : necessite >= 2 clusters (sinon pas de separation
-                    # calculable). Isole dans son propre try : s'il echoue, le reste
-                    # des metriques doit quand meme s'afficher.
-                    dbcv_global, dbcv_scores = None, None
-                    if len(clusters) >= 2:
+                    def _dbcv(lab):
+                        """DBCV exact sur une partition. None si impossible."""
+                        if len(np.unique(lab[lab != -1])) < 2:
+                            return None, None
                         try:
-                            reduced = tm.umap_model.transform(raw).astype(np.float64)
-                            dbcv_global, dbcv_scores = validity_index(
-                                reduced, labels, per_cluster_scores=True
-                            )
-                        except Exception as e:
-                            logger.error(f"[QUALITE] validity_index a echoue : {e}")
+                            return validity_index(reduced, lab, per_cluster_scores=True)
+                        except Exception as exc:
+                            logger.error(f"[QUALITE] validity_index a echoue : {exc}")
+                            return None, None
+
+                    dbcv_global, dbcv_scores = _dbcv(labels)
+                    dbcv_livre_global, dbcv_livre_scores = (
+                        _dbcv(topics) if topics is not None else (None, None)
+                    )
 
                     # Present uniquement si gen_min_span_tree=True dans la config.
                     rel_val = getattr(hdb, "relative_validity_", None)
 
                     c1, c2, c3, c4 = st.columns(4)
                     c1.metric("Clusters", len(clusters))
-                    c2.metric("Bruit", f"{pct_bruit:.0f} %")
+                    c2.metric("Bruit (avant reaffectation)", f"{pct_bruit:.0f} %")
                     c3.metric(
-                        "DBCV global",
-                        f"{dbcv_global:+.3f}" if dbcv_global is not None else "n/a",
+                        "DBCV livre",
+                        f"{dbcv_livre_global:+.3f}"
+                        if dbcv_livre_global is not None
+                        else "n/a",
+                        help="Sur la partition reellement livree (apres reduce_outliers), "
+                        "celle que tu lis dans l'onglet Analyse.",
                     )
                     c4.metric(
-                        "relative_validity_",
-                        f"{rel_val:.3f}" if rel_val is not None else "n/a",
+                        "DBCV noyau",
+                        f"{dbcv_global:+.3f}" if dbcv_global is not None else "n/a",
+                        help="Sur la partition brute de HDBSCAN, avant reaffectation "
+                        "des outliers.",
                     )
 
                     st.caption(
-                        "**DBCV global** = score exact, citable en rapport. "
-                        "**relative_validity_** = approximation : valable UNIQUEMENT pour "
-                        "comparer plusieurs configs entre elles sur le meme jeu de donnees, "
-                        "jamais comme score absolu (ecart mesure ~7x avec le DBCV exact). "
-                        "Ces scores mesurent la **proprete** des clusters, pas leur **interet**."
+                        f"**DBCV livre** = qualite des topics tels qu'ils te sont livres "
+                        f"(bruit reaffecte inclus) — c'est celui a regarder pour decider "
+                        f"si un topic porte un finding. **DBCV noyau** = qualite du coeur "
+                        f"dense seul ; un gros ecart entre les deux signale un topic dont "
+                        f"le coeur est propre mais qui a absorbe beaucoup de bruit. "
+                        f"**relative_validity_** = {f'{rel_val:.3f}' if rel_val is not None else 'n/a'} "
+                        f"(approximation : sert UNIQUEMENT a comparer des configs entre elles "
+                        f"sur le meme jeu de donnees, jamais comme score absolu — ecart mesure "
+                        f"~7x avec le DBCV exact). Ces scores mesurent la **proprete**, pas "
+                        f"l'**interet**."
                     )
 
                     if len(clusters) == 0:
@@ -308,12 +339,19 @@ def training_page():
                         persistence = getattr(hdb, "cluster_persistence_", None)
                         probas = getattr(hdb, "probabilities_", None)
 
-                        cols = {
-                            "Cluster": clusters,
-                            "Taille": [tailles[int(c)] for c in clusters],
-                        }
+                        cols = {"Cluster": clusters}
+                        if topics is not None:
+                            tailles_livrees = Counter(topics.tolist())
+                            cols["Taille livree"] = [
+                                tailles_livrees[int(c)] for c in clusters
+                            ]
+                        cols["Taille noyau"] = [tailles[int(c)] for c in clusters]
+                        if dbcv_livre_scores is not None and len(
+                            dbcv_livre_scores
+                        ) == len(clusters):
+                            cols["DBCV livre"] = np.round(dbcv_livre_scores, 3)
                         if dbcv_scores is not None:
-                            cols["DBCV"] = np.round(dbcv_scores, 3)
+                            cols["DBCV noyau"] = np.round(dbcv_scores, 3)
                         # cluster_persistence_ est aligne sur les labels 0..n-1 :
                         # on ne l'utilise que si la longueur correspond.
                         if persistence is not None and len(persistence) == len(clusters):
@@ -325,13 +363,16 @@ def training_page():
                             ]
 
                         df_q = pd.DataFrame(cols)
-                        if "DBCV" in df_q.columns:
-                            df_q = df_q.sort_values("DBCV", ascending=False)
+                        for tri in ("DBCV livre", "DBCV noyau"):
+                            if tri in df_q.columns:
+                                df_q = df_q.sort_values(tri, ascending=False)
+                                break
                         st.dataframe(df_q, width="stretch", hide_index=True)
 
                         logger.info(
                             f"[QUALITE] clusters={len(clusters)} bruit={pct_bruit:.0f}% "
-                            f"dbcv_global={dbcv_global} relative_validity={rel_val}"
+                            f"dbcv_livre={dbcv_livre_global} dbcv_noyau={dbcv_global} "
+                            f"relative_validity={rel_val}"
                         )
                 except Exception as e:
                     logger.error(f"[QUALITE] echec du calcul (non bloquant) : {e}")
