@@ -256,18 +256,22 @@ def training_page():
                     period = bertrend.last_topic_model_timestamp
 
                     hdb = tm.hdbscan_model
-                    # Partition BRUTE de HDBSCAN (le noyau dense de chaque topic).
-                    labels = hdb.labels_
-                    clusters = np.unique(labels[labels != -1])
+                    labels = hdb.labels_  # numerotation interne HDBSCAN
                     pct_bruit = float((labels == -1).mean() * 100)
 
-                    # Partition LIVREE : apres reduce_outliers(), une partie du bruit
-                    # est reaffectee aux topics (BERTopicModel.py:283). C'est CETTE
-                    # partition que l'utilisateur lit dans l'onglet Analyse, donc on
-                    # la note aussi. Les identifiants de topic sont conserves.
+                    # ATTENTION : BERTopic RENUMEROTE ses topics par taille
+                    # decroissante apres le clustering. topics_ et hdbscan.labels_
+                    # ne designent donc PAS les memes groupes sous le meme numero.
+                    # On indexe tout sur la numerotation BERTopic = celle que
+                    # l'utilisateur lit dans l'onglet Analyse.
                     topics = np.asarray(getattr(tm, "topics_", []))
                     if topics.shape != labels.shape:
-                        topics = None  # desaligne -> on n'affiche pas la partie livree
+                        topics = labels  # repli : pas d'autre reference disponible
+                    clusters = np.unique(topics[topics != -1])
+
+                    # Noyau dense d'un topic livre = ses documents que HDBSCAN
+                    # n'avait PAS classes en bruit, en gardant l'identifiant BERTopic.
+                    coeur = np.where(labels == -1, -1, topics)
 
                     # L'espace exact ou HDBSCAN a clusterise = la sortie de
                     # fit_transform, exposee par UMAP en .embedding_. Ne PAS refaire
@@ -291,10 +295,10 @@ def training_page():
                             logger.error(f"[QUALITE] validity_index a echoue : {exc}")
                             return None, None
 
-                    dbcv_global, dbcv_scores = _dbcv(labels)
-                    dbcv_livre_global, dbcv_livre_scores = (
-                        _dbcv(topics) if topics is not None else (None, None)
-                    )
+                    # Les deux partitions partagent la numerotation BERTopic, donc
+                    # les scores par cluster sont alignes ligne a ligne.
+                    dbcv_livre_global, dbcv_livre_scores = _dbcv(topics)
+                    dbcv_global, dbcv_scores = _dbcv(coeur)
 
                     # Present uniquement si gen_min_span_tree=True dans la config.
                     rel_val = getattr(hdb, "relative_validity_", None)
@@ -335,30 +339,44 @@ def training_page():
                             "Aucun cluster : tout est classe en bruit.", icon=WARNING_ICON
                         )
                     else:
-                        tailles = Counter(labels.tolist())
+                        tailles_livrees = Counter(topics.tolist())
+                        tailles_coeur = Counter(coeur.tolist())
                         persistence = getattr(hdb, "cluster_persistence_", None)
                         probas = getattr(hdb, "probabilities_", None)
 
-                        cols = {"Cluster": clusters}
-                        if topics is not None:
-                            tailles_livrees = Counter(topics.tolist())
-                            cols["Taille livree"] = [
-                                tailles_livrees[int(c)] for c in clusters
-                            ]
-                        cols["Taille noyau"] = [tailles[int(c)] for c in clusters]
-                        if dbcv_livre_scores is not None and len(
-                            dbcv_livre_scores
-                        ) == len(clusters):
+                        cols = {
+                            "Cluster": clusters,
+                            "Taille livree": [tailles_livrees[int(c)] for c in clusters],
+                            "Taille noyau": [tailles_coeur[int(c)] for c in clusters],
+                        }
+                        if dbcv_livre_scores is not None:
                             cols["DBCV livre"] = np.round(dbcv_livre_scores, 3)
-                        if dbcv_scores is not None:
+                        if dbcv_scores is not None and len(dbcv_scores) == len(clusters):
                             cols["DBCV noyau"] = np.round(dbcv_scores, 3)
-                        # cluster_persistence_ est aligne sur les labels 0..n-1 :
-                        # on ne l'utilise que si la longueur correspond.
-                        if persistence is not None and len(persistence) == len(clusters):
-                            cols["Persistence"] = np.round(persistence, 3)
+
+                        # cluster_persistence_ suit la numerotation HDBSCAN : on le
+                        # remappe vers les topics BERTopic via le cluster HDBSCAN
+                        # majoritaire dans le noyau de chaque topic.
+                        if persistence is not None:
+                            ids_hdb = np.unique(labels[labels != -1])
+                            if len(persistence) == len(ids_hdb):
+                                pers = []
+                                for c in clusters:
+                                    m = (topics == c) & (labels != -1)
+                                    if m.any():
+                                        dominant = np.bincount(labels[m]).argmax()
+                                        pos = np.where(ids_hdb == dominant)[0]
+                                        pers.append(
+                                            round(float(persistence[pos[0]]), 3)
+                                            if len(pos)
+                                            else None
+                                        )
+                                    else:
+                                        pers.append(None)
+                                cols["Persistence"] = pers
                         if probas is not None:
                             cols["Proba moyenne"] = [
-                                round(float(probas[labels == c].mean()), 3)
+                                round(float(probas[topics == c].mean()), 3)
                                 for c in clusters
                             ]
 
